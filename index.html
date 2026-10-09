@@ -590,8 +590,13 @@ function texTri(a, b, c, tile, uo) {
       if (pI <= zb[idx]) continue;
       const iv = 1 / pI;
       let f = (iv - fn) * fk; f = f > 0 ? (f > 1 ? 1 : f * f) : 0;
-      const tx = ((pU * iv * 16 + uo) | 0) & 15;
-      let ty = pV * iv * 16; ty = ty < 0 ? 0 : (ty > 15.99 ? 15 : ty | 0);
+      const tx0 = ((pU * iv * 16 + uo) | 0) & 15;
+      let ty0 = pV * iv * 16; ty0 = ty0 < 0 ? 0 : (ty0 > 15.99 ? 15 : ty0 | 0);
+      let tx = tx0, ty = ty0;
+      if (tile === T.WATER) {                          /* streaming water: scroll the uv */
+        tx = (tx0 + ((worldT * 4) & 15)) & 15;
+        ty = (ty0 + ((worldT * 2) & 15)) & 15;
+      }
       const cc = TEX[tb + (ty << 4) + tx];
       const sh = pS * li, fs = f * 256, ifs = 256 - fs;
       const r = ((cc & 255) * sh >> 8) * ifs + fr * fs;
@@ -1109,10 +1114,10 @@ function physics() {
   if (pl.fly) {
     pl.vy = ((keys['Space'] ? 1 : 0) - (keys['ControlLeft'] || keys['KeyC'] ? 1 : 0)) * spd;
   } else if (feet || dive > 0) {
-    if (feet) dive = 0.4; else dive -= dt;       /* buoyancy lingers briefly after leaving water */
+    if (feet) dive = 0.3; else dive -= dt;       /* buoyancy lingers briefly after leaving water */
     if (keys['Space']) {
-      if (pressS) pl.vy = 9.5;                   /* one-shot pop out of the water on press */
-      else if (pl.vy < 6.4) pl.vy += 22 * dt;
+      if (pressS) pl.vy = 6.6;                   /* one-shot hop out of the water on press */
+      else if (pl.vy < 5.5) pl.vy += 22 * dt;
     } else { pl.vy -= 9 * dt; pl.vy = Math.max(pl.vy, -4); }
   } else {
     if (keys['Space'] && pl.onGround) pl.vy = 8.8;
