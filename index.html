@@ -420,6 +420,59 @@ function topAt(x, z) {
   return y;
 }
 
+/* ---------------------------------------------------- liquid water */
+const flowL = new Uint8Array(W * H * W);             /* 0 = source / still, 1..7 = spread distance */
+let wq = [];
+function wIdx(x, y, z) { return (y * W + z) * W + x; }
+function waterBeside(x, y, z) {
+  for (const d of [[1, 0, 0], [-1, 0, 0], [0, 0, 1], [0, 0, -1], [0, 1, 0]])
+    if (get(x + d[0], y + d[1], z + d[2]) === WATER) return true;
+  return false;
+}
+function seedWater(x, y, z) { if (get(x, y, z) === AIR && waterBeside(x, y, z)) wq.push([x, y, z]); }
+const wMesh = {};
+function stepWater() {
+  let budget = 420;
+  while (budget-- > 0 && wq.length) {
+    const c = wq.shift(), x = c[0], y = c[1], z = c[2];
+    if (get(x, y, z) !== AIR) continue;
+    if (y + 1 < H && get(x, y + 1, z) === WATER) { set(x, y, z, WATER); flowL[wIdx(x, y, z)] = 0; }
+    else {
+      let lv = 8;
+      for (const s of [[x - 1, y, z], [x + 1, y, z], [x, y, z - 1], [x, y, z + 1]]) {
+        if (get(s[0], s[1], s[2]) === WATER) {
+          const n = flowL[wIdx(s[0], s[1], s[2])] + 1;
+          if (n < lv) lv = n;
+        }
+      }
+      if (lv > 7) continue;
+      set(x, y, z, WATER); flowL[wIdx(x, y, z)] = lv;
+    }
+    const key = ((x / CH) | 0) * CD + ((z / CH) | 0);
+    if (!wMesh[key]) wMesh[key] = 1;
+    if (y - 1 >= 0 && get(x, y - 1, z) === AIR) { wq.push([x, y - 1, z]); continue; }
+    const below = y - 1 >= 0 ? get(x, y - 1, z) : STONE;
+    if (below !== AIR) {
+      const lv = flowL[wIdx(x, y, z)];
+      if (lv < 7) {
+        for (const s of [[x - 1, y, z], [x + 1, y, z], [x, y, z - 1], [x, y, z + 1]])
+          if (get(s[0], s[1], s[2]) === AIR) wq.push([s[0], s[1], s[2]]);
+      }
+    }
+  }
+  if (Object.keys(wMesh).length) {
+    for (const k in wMesh) {
+      const cx = ((k | 0) / CD) | 0, cz = (k | 0) % CD;
+      for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) {
+        const ax = cx + dx, az = cz + dz;
+        if (ax < 0 || az < 0 || ax >= CW || az >= CD) continue;
+        meshChunk(chunks[az * CW + ax]);
+      }
+      delete wMesh[k];
+    }
+  }
+}
+
 /* ------------------------------------------------------ world build */
 function generate(seed) {
   seedOff = (seed * 0.6180339887) % 997;
@@ -1173,6 +1226,7 @@ function edit(p, remove) {
     if (p.id === BEDROCK) { toast('bedrock cannot be broken'); return; }
     spawnBreak(p.x, p.y, p.z, BLK[p.id].t[1]);
     set(p.x, p.y, p.z, AIR);
+    seedWater(p.x, p.y, p.z);
     remeshAround(p.x, p.z);
     sfx(150 + Math.random() * 60, 0.06, 'square');
   } else {
@@ -1387,6 +1441,7 @@ let last = performance.now(), fps = 60, frameAvg = 16, statT = 0, worldSeed = 13
 
 function newWorld(seed) {
   worldSeed = seed;
+  flowL.fill(0); wq.length = 0;
   generate(seed);
   buildClouds();
   spawnAnimals();
@@ -1427,6 +1482,7 @@ function frame(now) {
     cam.yaw += dt * 0.05;
   }
   stepAnimals(dt);
+  stepWater();
   if (!dayFrozen) dayT = (dayT + dt / 620) % 1;
 
   if (frameAvg > 27 && rscale > 0.4) { rscale = Math.max(0.4, rscale - 0.05); resize(rscale); frameAvg = 16; }
