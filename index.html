@@ -330,6 +330,18 @@ function tileImg(t) {
   g.putImageData(im, 0, 0);
   return tileCanvas[t] = c;
 }
+function paintWater(st) {
+  const t = T.WATER, a = st * 1.3, b = st * 0.8;
+  for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) {
+    const w = Math.sin((x + y * 0.6) * 0.7 + a) + Math.sin((x * 0.55 - y * 0.3) * 0.9 + b);
+    put(t, x, y, 46 + w * 10, 100 + w * 15, 176 + w * 16, 190);
+  }
+  for (let i = 0; i < 4; i++) {
+    const x = (hash2(i * 31 + 5, 9) * 16) | 0, y = (hash2(3, i * 17 + 2) * 16) | 0;
+    const gl = Math.sin(st * 2.6 + i * 1.7);
+    put(t, x, y, 20 + (gl * 0.5 + 0.5) * 80, 60 + (gl * 0.5 + 0.5) * 100, 120 + (gl * 0.5 + 0.5) * 110, 200);
+  }
+}
 
 /* ------------------------------------------------------------ blocks */
 const T = { GRASS_TOP: 0, GRASS_SIDE: 1, DIRT: 2, STONE: 3, SAND: 4, LOG_TOP: 5, LOG_SIDE: 6,
@@ -1022,7 +1034,7 @@ function stepAnimals(dt) {
 const PW = 0.62, PH = 1.78, EYE = 1.62;
 const pl = { x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, onGround: 0, fly: 0, bob: 0 };
 let sel = 0, running = false, hasPointer = false, started = false, hit = null;
-let keys = Object.create(null), breath = 0, dt = 0, thirdPerson = false;
+let keys = Object.create(null), breath = 0, dt = 0, thirdPerson = false, dive = 0, wSpace = false;
 
 const FSHADE = [1, 0.55, 0.78, 0.78, 0.7, 0.7];
 const MOBS = [
@@ -1081,6 +1093,7 @@ function physics() {
   const head = get(Math.floor(pl.x), Math.floor(pl.y + EYE), Math.floor(pl.z)) === WATER;
   const feet = get(Math.floor(pl.x), Math.floor(pl.y + 0.2), Math.floor(pl.z)) === WATER;
   under = head;
+  const pressS = keys['Space'] && !wSpace; wSpace = !!keys['Space'];
   const fwd = (keys['KeyW'] ? 1 : 0) - (keys['KeyS'] ? 1 : 0);
   const str = (keys['KeyD'] ? 1 : 0) - (keys['KeyA'] ? 1 : 0);
   const sprint = !!keys['ShiftLeft'];
@@ -1095,9 +1108,12 @@ function physics() {
 
   if (pl.fly) {
     pl.vy = ((keys['Space'] ? 1 : 0) - (keys['ControlLeft'] || keys['KeyC'] ? 1 : 0)) * spd;
-  } else if (feet) {
-    pl.vy += (keys['Space'] ? 16 : -8) * dt;
-    pl.vy *= Math.max(0, 1 - 3.2 * dt);
+  } else if (feet || dive > 0) {
+    if (feet) dive = 0.4; else dive -= dt;       /* buoyancy lingers briefly after leaving water */
+    if (keys['Space']) {
+      if (pressS) pl.vy = 9.5;                   /* one-shot pop out of the water on press */
+      else if (pl.vy < 6.4) pl.vy += 22 * dt;
+    } else { pl.vy -= 9 * dt; pl.vy = Math.max(pl.vy, -4); }
   } else {
     if (keys['Space'] && pl.onGround) pl.vy = 8.8;
     pl.vy -= 30 * dt;
@@ -1296,6 +1312,7 @@ addEventListener('resize', () => resize(rscale));
 function render() {
   const t0 = performance.now();
   worldT += dt;
+  paintWater(worldT);
   camBasis();
   const tanH = Math.tan(0.6109);                          /* 70 degree vertical fov */
   FOC = (RH / 2) / tanH;
